@@ -1,0 +1,20 @@
+{
+  "warehouse-3": {
+    "metrics": ["temperature", "humidity"]
+  },
+  "cold-storage-1": {
+    "metrics": ["temperature", "humidity"]
+  },
+  "front-gate-camera": {
+    "metrics": ["connectivity", "status"]
+  },
+  "loading-dock-2": {
+    "metrics": ["temperature", "occupancy"]
+  },
+  "server-room-a": {
+    "metrics": ["temperature", "humidity", "power_draw"]
+  },
+  "pump-station-4": {
+    "metrics": ["pressure", "flow_rate"]
+  }
+}
