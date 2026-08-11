@@ -149,7 +149,7 @@ def _real_parse(text: str) -> dict:
     genai.configure(api_key=API_KEY)
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
+        model_name="gemini-flash-latest",
         system_instruction=SYSTEM_PROMPT,
         generation_config={"response_mime_type": "application/json"},
     )
