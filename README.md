@@ -112,15 +112,15 @@ exercise the actual model.
 ## Architecture
 
 ```mermaid
-flowchart TD
-    A["📝 Natural language text"] --> B["llm_client.parse_command()<br/>LLM guesses a structured action"]
-    B --> C{"models.parse_action()<br/>Does it fit a known Action shape?"}
-    C -->|"❌ Malformed"| F["UNSUPPORTED<br/>Bad shape / type"]
-    C -->|"✅ Valid shape"| D{"validator.validate_action()<br/>Does it match reality?"}
-    D -->|"❌ Unknown device/metric"| G["REJECTED<br/>Clear reason returned"]
-    D -->|"✅ Valid"| E["store.add_rule() / get_rules()<br/>Executes the action"]
-    E --> H["✅ EXECUTED<br/>JSON response"]
-    F --> Z["JSON response<br/>{ understood, status, reason, result }"]
+flowchart LR
+    A["Text"] --> B["LLM parse"]
+    B --> C{"Valid shape?"}
+    C -->|No| F["UNSUPPORTED"]
+    C -->|Yes| D{"Valid data?"}
+    D -->|No| G["REJECTED"]
+    D -->|Yes| E["Execute"]
+    E --> H["EXECUTED"]
+    F --> Z["JSON response"]
     G --> Z
     H --> Z
 
@@ -144,6 +144,7 @@ Three deliberately separate layers:
 Route handlers in `main.py` are intentionally thin — they just call
 these modules in order and shape the response. No business logic lives
 in the route itself.
+
 
 ### Response shape
 
