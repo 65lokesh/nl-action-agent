@@ -111,24 +111,25 @@ exercise the actual model.
 
 ## Architecture
 
-text
-│
-▼
-llm_client.parse_command() ── LLM guesses a structured action (raw dict)
-│
-▼
-models.parse_action() ── Does the guess fit a known Action shape?
-│ (Pydantic validation — catches malformed
-│ types, missing fields, wrong enums)
-▼
-validator.validate_action() ── Does it make sense given reality?
-│ (device exists? metric valid for that
-│ device? duration positive? etc.)
-▼
-store.add_rule() / get_rules() ── Only runs if the above two passed
-│
-▼
-JSON response ── { understood, status, reason, result }
+```mermaid
+flowchart TD
+    A["📝 Natural language text"] --> B["llm_client.parse_command()<br/>LLM guesses a structured action"]
+    B --> C{"models.parse_action()<br/>Does it fit a known Action shape?"}
+    C -->|"❌ Malformed"| F["UNSUPPORTED<br/>Bad shape / type"]
+    C -->|"✅ Valid shape"| D{"validator.validate_action()<br/>Does it match reality?"}
+    D -->|"❌ Unknown device/metric"| G["REJECTED<br/>Clear reason returned"]
+    D -->|"✅ Valid"| E["store.add_rule() / get_rules()<br/>Executes the action"]
+    E --> H["✅ EXECUTED<br/>JSON response"]
+    F --> Z["JSON response<br/>{ understood, status, reason, result }"]
+    G --> Z
+    H --> Z
+
+    style A fill:#e1f5fe
+    style Z fill:#e8f5e9
+    style F fill:#ffebee
+    style G fill:#fff3e0
+    style H fill:#e8f5e9
+```
 
 Three deliberately separate layers:
 
