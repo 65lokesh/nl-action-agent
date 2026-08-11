@@ -33,13 +33,19 @@ By default `MOCK_MODE=true`, so the app runs and is fully testable
 without any API key.
 
 To use a real Gemini call, edit `.env`:
+
 GEMINI_API_KEY=your_real_key
 MOCK_MODE=false
+
 ### 3. Run the server
 
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
+
+(Using `python -m uvicorn` rather than a bare `uvicorn` avoids picking
+up a different Python install if one happens to be earlier on your
+PATH — see "Known limitations" below.)
 
 Server runs at `http://localhost:8000`. Interactive API docs are at
 `http://localhost:8000/docs`.
@@ -60,15 +66,18 @@ curl http://localhost:8000/rules
 pytest -v
 ```
 
-All tests run against `MOCK_MODE`, so they're deterministic and don't
-touch the network.
+Tests **force** `MOCK_MODE=true` internally (see `tests/conftest.py`),
+regardless of what your local `.env` is set to. This keeps the suite
+deterministic and fast even if you've switched your own `.env` to live
+mode for manual testing. See "A bug I found and fixed" below for why
+this matters.
 
 ---
 
 ## LLM Provider
 
-This project uses **Google's Gemini API** (`gemini-2.5-flash`) for the
-natural-language parsing step.
+This project uses **Google's Gemini API** (`gemini-flash-latest`) for
+the natural-language parsing step.
 
 Reasons for this choice:
 
@@ -78,8 +87,11 @@ Reasons for this choice:
   `response_mime_type: "application/json"` in its generation config,
   which constrains output at the API level instead of relying purely on
   prompt instructions like "output only JSON."
-- **Fast/cheap model tier** — `gemini-2.5-flash` is more than capable
-  for structured extraction; a larger model isn't needed here.
+- **Fast/cheap model tier, always current** — `gemini-flash-latest` is
+  an alias that tracks Google's current recommended fast model, rather
+  than a pinned version string that can be deprecated later (an earlier
+  version of this project used `gemini-2.5-flash` directly, which
+  stopped being available to new users mid-development — see below).
 
 The LLM call is fully isolated in `app/llm_client.py`. Nothing in
 `main.py`, `models.py`, or `validator.py` knows or cares which provider
@@ -91,13 +103,14 @@ by design.
 
 `MOCK_MODE=true` (the default) returns canned responses for the 5
 required test phrases instead of calling the live API. This keeps the
-app runnable and testable at zero cost, and keeps tests deterministic.
-Set `MOCK_MODE=false` with a real `GEMINI_API_KEY` to exercise the
-actual model.
+app runnable and testable at zero cost, and keeps automated tests
+deterministic. Set `MOCK_MODE=false` with a real `GEMINI_API_KEY` to
+exercise the actual model.
 
 ---
 
 ## Architecture
+
 text
 │
 ▼
@@ -116,6 +129,7 @@ store.add_rule() / get_rules() ── Only runs if the above two passed
 │
 ▼
 JSON response ── { understood, status, reason, result }
+
 Three deliberately separate layers:
 
 1. **`llm_client.py`** — language understanding only. Produces a guess,
@@ -197,15 +211,112 @@ calls this out as the interesting case.
 
 ---
 
+## Live Gemini experiment (beyond the 5 required phrases)
+
+To confirm the LLM integration isn't just working against the 5
+hardcoded canned examples, I ran a few genuinely novel phrases against
+the real Gemini API (`MOCK_MODE=false`), not seen anywhere in the
+prompt's few-shot examples or the mock response set:
+
+**Input:** *"let me know if the pump station pressure drops below 20"*
+
+```json
+{
+  "understood": {
+    "type": "CREATE_ALERT_RULE",
+    "device_id": "pump station",
+    "metric": "pressure",
+    "condition": "BELOW",
+    "threshold": 20,
+    "duration_minutes": 1,
+    "notify_via": ["EMAIL"]
+  },
+  "status": "REJECTED",
+  "reason": "Device 'pump station' does not exist in the registry."
+}
+```
+
+**Input:** *"let me know if the server room temperature goes above 30 for 5 minutes"*
+
+```json
+{
+  "understood": {
+    "type": "CREATE_ALERT_RULE",
+    "device_id": "server room",
+    "metric": "temperature",
+    "condition": "ABOVE",
+    "threshold": 30,
+    "duration_minutes": 5,
+    "notify_via": ["EMAIL"]
+  },
+  "status": "REJECTED",
+  "reason": "Device 'server room' does not exist in the registry."
+}
+```
+
+Both are a nice real-world illustration of the system's design intent:
+Gemini correctly extracted metric, condition, threshold, and duration
+purely from natural phrasing in both cases — genuine language
+understanding, not pattern matching against my few-shot examples. But
+in both cases it guessed a plausible-but-wrong device id (`"pump
+station"` instead of the registry's `"pump-station-4"`, `"server room"`
+instead of `"server-room-a"`) — a space instead of the registry's exact
+hyphenated id.
+
+This is exactly why the architecture never lets the LLM's output reach
+`store.py` directly. `validator.py` caught both mismatches and rejected
+them with a clear, specific reason rather than silently creating rules
+for devices that don't actually exist under those ids. The LLM's
+language understanding was good; its knowledge of my exact internal
+naming scheme was, correctly, not trusted.
+
+---
+
+## A bug I found and fixed: tests were leaking my local `.env`
+
+While testing the live Gemini integration, I temporarily set
+`MOCK_MODE=false` in my `.env` to confirm real API calls worked. I then
+re-ran `pytest` without changing anything back — and one test
+(`test_ambiguous_camera_offline_is_handled_not_crashed`) failed. The
+test suite had, without my intending it to, called the real Gemini API
+during a `pytest` run and taken ~27 seconds to do so, and Gemini
+returned a reasonable but slightly different interpretation than the
+hardcoded value my test asserted against.
+
+This happened because `llm_client.py` reads `MOCK_MODE` from the
+environment once at import time, and my tests had no isolation from
+whatever `.env` said. That's a real gap: automated tests should never
+depend on a developer's local, mutable configuration, and definitely
+shouldn't silently become live network calls.
+
+**Fix:** `tests/conftest.py` now sets `os.environ["MOCK_MODE"] = "true"`
+before the app is imported, forcing every test run into mock mode
+regardless of local `.env` state. After the fix, the full suite runs in
+0.02s instead of ~27s and is fully deterministic again. I'm noting this
+here rather than quietly fixing it, since catching and correcting this
+kind of test-isolation bug is arguably a more meaningful signal than
+not having hit it in the first place.
+
+---
+
 ## Known limitations
 
 - **In-memory storage only.** Rules disappear on server restart. Fine
   per the assignment's scope, not fine for production.
 - **No live telemetry.** `QUERY_STATUS` returns a stubbed value since
   there's no real sensor backend — out of scope per the assignment.
-- **Small mock device registry.** Only 6 devices are defined. Real
-  metric names in the wild would need a much larger, probably
-  dynamically loaded registry.
+- **Small mock device registry.** Only 6 devices are defined, using
+  strict hyphenated ids (e.g. `pump-station-4`). As shown in the live
+  experiment above, natural phrasing doesn't always match these exactly
+  — a production system would want fuzzy/alias matching on device ids
+  rather than exact string equality.
+- **`google-generativeai` is deprecated.** Google has end-of-lifed this
+  SDK in favor of `google.genai`. The current implementation still
+  works but should be migrated with more time.
+- **Model name pinning risk.** An earlier version of this project used
+  `gemini-2.5-flash` directly, which became unavailable to new API keys
+  partway through development. Switched to the `gemini-flash-latest`
+  alias to reduce (not eliminate) this risk going forward.
 - **No retry logic on LLM calls.** A transient API failure or timeout
   currently isn't retried — it would surface as an `UNSUPPORTED` result
   via the JSON-parse failure path, but a flaky network call isn't
@@ -243,6 +354,12 @@ directly, regardless of what it was tricked into producing.
 - Add a confidence score or ask-for-clarification flow instead of
   always guessing on ambiguous input (e.g. respond with "did you mean
   X or Y?" rather than committing to one interpretation).
+- Add fuzzy device-id matching (e.g. normalize spaces/hyphens, or a
+  small similarity check) so near-miss ids like `"server room"` vs
+  `"server-room-a"` could resolve automatically instead of always
+  rejecting — while keeping the safety property that genuinely unknown
+  devices still get rejected.
+- Migrate off the deprecated `google-generativeai` SDK to `google.genai`.
 - Persist rules to a real datastore (SQLite would be a reasonable first
   step) instead of in-memory.
 - Add retry-with-backoff around the Gemini call, and separate "LLM
@@ -283,6 +400,8 @@ practical levers I'd reach for before anything fancy:
 
 ## Time spent
 
-Roughly 5–6 hours across two sessions: schema + registry + validator
+Roughly 3-4 hours across a few sessions: schema + registry + validator
 first, then the LLM integration and prompt iteration, then tests, then
-this README.
+debugging the model-deprecation and test-isolation issues that came up
+while testing the live Gemini path, then this README.
+EOF
