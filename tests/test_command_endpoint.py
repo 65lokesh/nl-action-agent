@@ -1,10 +1,3 @@
-"""
-One test per required case from the assignment. These run against
-MOCK_MODE (see llm_client.py), so no live API key is needed and the
-results are deterministic.
-"""
-
-
 def test_valid_alert_rule_creation(client):
     resp = client.post("/command", json={
         "text": "Alert me if warehouse-3 temperature stays above 40°C for more than 10 minutes"

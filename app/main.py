@@ -1,9 +1,3 @@
-"""
-FastAPI app. Route handlers stay thin on purpose - all the real logic
-(parsing, validating, executing) lives in the other modules. This file
-just wires the pipeline together and shapes the HTTP response.
-"""
-
 import json
 from pathlib import Path
 

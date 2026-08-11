@@ -1,11 +1,3 @@
-"""
-This is where the actual safety checks live. The LLM can say whatever
-it wants - nothing gets executed unless it passes through here first.
-
-Each check function returns (is_valid, reason). reason is None when valid,
-otherwise it's a human-readable string explaining what failed.
-"""
-
 from app.models import Action, CreateAlertRule, QueryStatus, ListRules
 
 

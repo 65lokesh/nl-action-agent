@@ -1,9 +1,3 @@
-"""
-Dead simple in-memory store for created rules.
-Resets every time the server restarts - that's fine per the assignment,
-no real DB needed.
-"""
-
 from itertools import count
 from typing import Optional
 
@@ -24,7 +18,6 @@ def get_rules(device_id: Optional[str] = None) -> list[dict]:
 
 
 def _reset():
-    """Only used by tests to get a clean slate between test cases."""
     global _rules, _id_counter
     _rules = []
     _id_counter = count(1)

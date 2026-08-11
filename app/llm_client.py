@@ -1,12 +1,3 @@
-"""
-Wraps the LLM call that turns free text into a structured action guess.
-
-Important: this file only produces a *guess*. It does not decide what's
-allowed - that's validator.py's job. If GEMINI_API_KEY isn't set, or
-MOCK_MODE is on, we fall back to canned responses for the known test
-phrases so the app is runnable and testable without burning API credits.
-"""
-
 import json
 import os
 import re
